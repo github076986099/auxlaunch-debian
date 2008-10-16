@@ -1,0 +1,155 @@
+#!/usr/bin/env python
+
+# TODO:
+#   Suspend bug?
+#   Config editor?
+#   Categories?
+#	 Configable filter list
+
+#	 Added window (task) switching
+#   Bigger button images and text
+
+import pygtk
+import gtk
+import sys
+import os
+import dbus
+import dbus.glib
+
+class AuxLaunch:
+
+	# Called when any (on-screen) button is pressed
+	def callback(self, widget, data):
+		if   data == 'appdn':	self.setLaunch(+1)
+		elif data == 'appup':	self.setLaunch(-1)
+		elif data == 'launch':
+			if self.lstCmd[self.curApp] == '(cancel)':
+				self.win.iconify()
+			elif self.lstCmd[self.curApp] == '(quit)':
+				gtk.main_quit()
+			else:	
+				print 'auxlaunch: launching "'+self.lstCmd[self.curApp]+'"'
+				os.system(self.lstCmd[self.curApp])	
+				self.win.iconify()
+		elif data == 'windn':	self.setSwitch(+1)
+		elif data == 'winup':	self.setSwitch(-1)
+		elif data == 'switch':
+			print 'auxlaunch: swtiching "'+self.lstWin[self.curWin]+'": '+self.lstWID[self.curWin]
+			os.system('wmctrl -i -a '+self.lstWID[self.curWin])
+
+	# Update Launch button's image and label			
+	def setLaunch(self, adjust):
+		self.curApp = (self.curApp + adjust) % len(self.lstLbl)
+		self.btnLaunch.set_image(self.lstImg[self.curApp])
+		label = self.btnLaunch.child.child.get_children()[1]
+		if isinstance(label, gtk.Label):
+			label.set_markup('<big><big><big>'+self.lstLbl[self.curApp]+'</big></big></big>')
+		
+	# Update Switch (window title) button's image and label			
+	def setSwitch(self, adjust):
+		self.curWin = (self.curWin + adjust) % len(self.lstWin)
+		self.btnSwitch.set_label('"'+self.lstWin[self.curWin]+'"')
+		label = self.btnSwitch.child.child.get_children()[1]
+		if isinstance(label, gtk.Label):
+			label.set_markup('<big><big><big>'+self.lstWin[self.curWin]+'</big></big></big>')
+		
+	# Ok to exit app?
+	def delete_event(self, widget, event, data=None):
+		gtk.main_quit()
+		return False
+
+	# React to a change in focus for Auxlaunch's window
+	def focus_event(self, widget, event, data=None):
+		# Load snapshot of other apps' window titles
+		if self.doWinSwitching:
+			self.lstWID = []
+			self.lstWin = []
+			output = os.popen('wmctrl -l','r')
+			while True:
+				line = output.readline()
+				if not line: break
+				field = line.split(None,3)
+				if field[3].rstrip() <> 'auxlaunch':
+					self.lstWID.append(field[0]) 
+					self.lstWin.append(field[3].rstrip()) 
+			self.curWin = 0
+			self.setSwitch(0)
+
+	# Utility function to create buttons
+	def create_button(self, stock_id, data, left,right,top,botton):
+		button = gtk.Button() 
+		image = gtk.Image() 
+		image.set_from_stock(stock_id, gtk.ICON_SIZE_DIALOG)
+		button.set_image(image)
+		button.connect("clicked", self.callback, data)
+		self.tbl.attach(button, left, right, top, botton)
+		button.show()
+		return button
+
+	def __init__(self, args):
+		# "-nowm" means no window manager - don't show window switching buttons
+		if '-nowm' in args:
+			self.doWinSwitching = False
+		else:
+			self.doWinSwitching = True
+
+		# Set up GTK window and widgets
+		self.win = gtk.Window(gtk.WINDOW_TOPLEVEL)
+		self.win.connect("delete_event", self.delete_event)
+		self.win.connect("focus_in_event", self.focus_event)
+		self.win.set_border_width(10)
+		if self.doWinSwitching:
+			self.tbl = gtk.Table(3, 2, True)
+		else:
+			self.tbl = gtk.Table(3, 1, True)
+		self.win.add(self.tbl)
+		self.btnLaunch = self.create_button('gtk-dialog-error','launch',0,1,0,1)
+		self.btnAppUp  = self.create_button('gtk-go-up'       ,'appup' ,0,1,1,2)
+		self.btnAppDn  = self.create_button('gtk-go-down'     ,'appdn' ,0,1,2,3)
+		self.btnLaunch.set_label('default')
+		if self.doWinSwitching:
+			self.btnSwitch = self.create_button('gtk-refresh','switch',1,2,0,1)
+			self.btnwinup  = self.create_button('gtk-go-up'  ,'winup' ,1,2,1,2)
+			self.btnwindn  = self.create_button('gtk-go-down','windn' ,1,2,2,3)
+		self.tbl.show()
+		self.win.show()
+		self.win.iconify()
+
+		# Load commands and config into lists
+		self.lstCmd = []
+		self.lstLbl = []
+		self.lstImg = []
+		rcfile = open('.auxlaunchrc')
+		for line in rcfile:
+			field = line.split(',')
+			self.lstLbl.append(field[0])
+			self.lstCmd.append(field[1])
+			image = gtk.Image() 
+			if field[2].rstrip() == '':
+				image.set_from_stock('gtk-execute', gtk.ICON_SIZE_DIALOG)
+			elif field[2][:4] == 'gtk-':
+				image.set_from_stock(field[2], gtk.ICON_SIZE_DIALOG)
+			else:
+				image.set_from_file(field[2])
+			self.lstImg.append(image)
+
+		# Initialize state
+		self.curApp = 0
+		self.curWin = 0
+		self.setLaunch(0)
+		# switch will be set at focus change
+
+		# Hook up to AUX button
+		bus = dbus.SystemBus()
+		bus.add_signal_receiver(self.signal_handler,
+				dbus_interface="org.freesmartphone.Device.Input",
+				signal_name="Event")
+
+	# React to AUX button press
+	def signal_handler(self, name, action, seconds):
+		if name == "AUX" and action == "pressed":
+			self.win.present()  # cause auxlaunch window to appear
+
+auxl = AuxLaunch(sys.argv)
+gtk.main()
+

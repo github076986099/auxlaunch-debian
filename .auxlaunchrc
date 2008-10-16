@@ -1,0 +1,5 @@
+Suspend,apm -s,gtk-media-pause,
+Midori,/usr/bin/midori &,midori_small.jpg,
+xterm,xterm &,gtk-execute,
+Cancel,(cancel),gtk-cancel,
+Quit,(quit),gtk-quit,

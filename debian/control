@@ -1,0 +1,16 @@
+Source: auxlaunch
+Section: x11
+Priority: extra
+Maintainer: Christian M. Amsüss <chrysn@fsfe.org>
+Build-Depends: debhelper (>= 7)
+Standards-Version: 3.7.3
+Homepage: http://aliasid.googlepages.com/auxlaunch
+
+Package: auxlaunch
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, python, python-gtk2, python-dbus
+Description: app launcher for the Neo Freerunner
+ Auxlaunch is a simple application launcher for the Neo Freerunner.
+ .
+ Once started, it waits for the AUX button (top left) to be pressed and
+ subsequently shows a configuratble list of applications.

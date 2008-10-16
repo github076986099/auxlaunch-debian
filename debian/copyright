@@ -1,0 +1,23 @@
+This package was debianized by Christian M. Amsüss <chrysn@fsfe.org> on
+Thu, 16 Oct 2008 15:36:29 +0200.
+
+It was downloaded from <http://aliasid.googlepages.com/auxlaunch-0.3.tar.gz>
+
+Upstream Author(s):
+
+    Unknown (no hint at website or code)
+    <put author's name and email here>
+    <likewise for another author>
+
+Copyright:
+
+    <Copyright (C) YYYY Name OfAuthor>
+    <likewise for another author>
+
+License:
+
+    Equally unknown
+    <Put the license of the package here indented by 4 spaces>
+
+The Debian packaging is (C) 2008, Christian M. Amsüss <chrysn@fsfe.org> and
+is licensed under the GPL, see `/usr/share/common-licenses/GPL'.

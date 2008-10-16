@@ -1,0 +1,4 @@
+# Compulsory line, this is a version 3 file
+version=3
+
+http://aliasid.googlepages.com/auxlaunch auxlaunch-(.*)\.tar\.gz # doesn't work, site acts funny

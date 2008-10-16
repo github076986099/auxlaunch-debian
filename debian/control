@@ -2,7 +2,7 @@ Source: auxlaunch
 Section: x11
 Priority: extra
 Maintainer: Christian M. Amsüss <chrysn@fsfe.org>
-Build-Depends: debhelper (>= 7), python
+Build-Depends-Indep: debhelper (>= 7), python
 Standards-Version: 3.7.3
 Homepage: http://aliasid.googlepages.com/auxlaunch
 

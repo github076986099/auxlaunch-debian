@@ -9,6 +9,7 @@ Homepage: http://aliasid.googlepages.com/auxlaunch
 Package: auxlaunch
 Architecture: all
 Depends: ${shlibs:Depends}, ${misc:Depends}, python, python-gtk2, python-dbus
+Recommends: wmctrl
 Description: app launcher for the Neo Freerunner
  Auxlaunch is a simple application launcher for the Neo Freerunner.
  .

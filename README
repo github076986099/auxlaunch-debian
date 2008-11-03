@@ -2,10 +2,16 @@ Auxlaunch
 
 Installation:
 1. Extract all files to new directory.
-2. Edit .auxlaunch
-   a) Specify stock GTK icon identifiers -or- file 
-      names of existing images.
-   b) Use " &" and end of command to run in background.
-3. At command line, run "./auxlaunch".
-4. Press AUX button and enjoy!
+2. At command line, run "./auxlaunch".
+3. Press AUX button and enjoy!
+
+Configuration: Edit the ".auxlaunch" file.
+1. Create a new group (for items that follow) with a 
+   line containing group name in quotes followed by a comma.	
+2. For item icons, specify a stock GTK icon identifier or   
+   a path to an existing image.
+3. Use " &" at end of command to run in background.
+
+Options: Use "auxlaunch -help" to view available options.
+
  

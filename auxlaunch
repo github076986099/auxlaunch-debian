@@ -1,13 +1,6 @@
 #!/usr/bin/env python
 
-# TODO:
-#   Suspend bug?
-#   Config editor?
-#   Categories?
-#	 Configable filter list
-
-#	 Added window (task) switching
-#   Bigger button images and text
+# Auxlaunch, October 2008, aliasid
 
 import pygtk
 import gtk
@@ -16,140 +9,435 @@ import os
 import dbus
 import dbus.glib
 
-class AuxLaunch:
-
-	# Called when any (on-screen) button is pressed
-	def callback(self, widget, data):
-		if   data == 'appdn':	self.setLaunch(+1)
-		elif data == 'appup':	self.setLaunch(-1)
-		elif data == 'launch':
-			if self.lstCmd[self.curApp] == '(cancel)':
-				self.win.iconify()
-			elif self.lstCmd[self.curApp] == '(quit)':
-				gtk.main_quit()
-			else:	
-				print 'auxlaunch: launching "'+self.lstCmd[self.curApp]+'"'
-				os.system(self.lstCmd[self.curApp])	
-				self.win.iconify()
-		elif data == 'windn':	self.setSwitch(+1)
-		elif data == 'winup':	self.setSwitch(-1)
-		elif data == 'switch':
-			print 'auxlaunch: swtiching "'+self.lstWin[self.curWin]+'": '+self.lstWID[self.curWin]
-			os.system('wmctrl -i -a '+self.lstWID[self.curWin])
-
-	# Update Launch button's image and label			
-	def setLaunch(self, adjust):
-		self.curApp = (self.curApp + adjust) % len(self.lstLbl)
-		self.btnLaunch.set_image(self.lstImg[self.curApp])
-		label = self.btnLaunch.child.child.get_children()[1]
-		if isinstance(label, gtk.Label):
-			label.set_markup('<big><big><big>'+self.lstLbl[self.curApp]+'</big></big></big>')
+class ViewManager:
+	'''Manage the user interface'''
+	def __init__(self):
+		# Create map for change buttons. Indicate which modes
+		#   are invoked by which button positions. This supports options
+		#   like righ/left handed, and window-swithcing or not.
+		lns = {0:Controller.GRP,1:Controller.APP,2:Controller.ERR}
+		lsw = {0:Controller.GRP,1:Controller.APP,2:Controller.WIN}
+		rns = {0:Controller.APP,1:Controller.GRP,2:Controller.ERR}
+		rsw = {0:Controller.WIN,1:Controller.APP,2:Controller.GRP}
+		self.keymap = {'left': {'no_switching':lns,'switching':lsw},
+		               'right':{'no_switching':rns,'switching':rsw}}
 		
-	# Update Switch (window title) button's image and label			
-	def setSwitch(self, adjust):
-		self.curWin = (self.curWin + adjust) % len(self.lstWin)
-		self.btnSwitch.set_label('"'+self.lstWin[self.curWin]+'"')
-		label = self.btnSwitch.child.child.get_children()[1]
-		if isinstance(label, gtk.Label):
-			label.set_markup('<big><big><big>'+self.lstWin[self.curWin]+'</big></big></big>')
-		
-	# Ok to exit app?
-	def delete_event(self, widget, event, data=None):
-		gtk.main_quit()
-		return False
+		self.hidden = False  # Track if Auxluanch's window is showing or not
 
-	# React to a change in focus for Auxlaunch's window
-	def focus_event(self, widget, event, data=None):
-		# Load snapshot of other apps' window titles
-		if self.doWinSwitching:
-			self.lstWID = []
-			self.lstWin = []
-			output = os.popen('wmctrl -l','r')
-			while True:
-				line = output.readline()
-				if not line: break
-				field = line.split(None,3)
-				if field[3].rstrip() <> 'auxlaunch':
-					self.lstWID.append(field[0]) 
-					self.lstWin.append(field[3].rstrip()) 
-			self.curWin = 0
-			self.setSwitch(0)
+	def start_ui(self):
+		global ctrl
 
-	# Utility function to create buttons
-	def create_button(self, stock_id, data, left,right,top,botton):
-		button = gtk.Button() 
-		image = gtk.Image() 
-		image.set_from_stock(stock_id, gtk.ICON_SIZE_DIALOG)
-		button.set_image(image)
-		button.connect("clicked", self.callback, data)
-		self.tbl.attach(button, left, right, top, botton)
-		button.show()
-		return button
-
-	def __init__(self, args):
-		# "-nowm" means no window manager - don't show window switching buttons
-		if '-nowm' in args:
-			self.doWinSwitching = False
-		else:
-			self.doWinSwitching = True
-
-		# Set up GTK window and widgets
+		# Set up GTK window and table
 		self.win = gtk.Window(gtk.WINDOW_TOPLEVEL)
 		self.win.connect("delete_event", self.delete_event)
 		self.win.connect("focus_in_event", self.focus_event)
 		self.win.set_border_width(10)
-		if self.doWinSwitching:
-			self.tbl = gtk.Table(3, 2, True)
+		if ctrl.simple_ui():
+			rows = 2
 		else:
-			self.tbl = gtk.Table(3, 1, True)
+			rows = 3
+		if ctrl.window_mgr():
+			columns = 2
+		else:
+			columns = 1
+		self.tbl = gtk.Table(rows, columns, True)
 		self.win.add(self.tbl)
-		self.btnLaunch = self.create_button('gtk-dialog-error','launch',0,1,0,1)
-		self.btnAppUp  = self.create_button('gtk-go-up'       ,'appup' ,0,1,1,2)
-		self.btnAppDn  = self.create_button('gtk-go-down'     ,'appdn' ,0,1,2,3)
-		self.btnLaunch.set_label('default')
-		if self.doWinSwitching:
-			self.btnSwitch = self.create_button('gtk-refresh','switch',1,2,0,1)
-			self.btnwinup  = self.create_button('gtk-go-up'  ,'winup' ,1,2,1,2)
-			self.btnwindn  = self.create_button('gtk-go-down','windn' ,1,2,2,3)
+
+		# Create a "go" button
+		self.btnGo = self.create_button('gtk-dialog-error','go',0,3,0,1)
+		self.btnGo.set_label('initial')
+
+		# Create multiple sets of arrow or "change" buttons
+		#   Buttons' "data" indicates position (column) and
+		#   "adjustment" (+1/-1 = up or down)
+		if ctrl.simple_ui():
+			self.btn1dn = self.create_button('gtk-directory',  '0,-1',0,1,1,3)
+			self.btn2dn = self.create_button('gtk-index',      '1,-1',1,2,1,3)
+			if ctrl.window_mgr():
+				self.btn3dn = self.create_button('gtk-refresh','2,-1',2,3,1,3)
+		else:
+			self.btn1up = self.create_button('gtk-go-up'  ,'0,+1',0,1,1,2)
+			self.btn1dn = self.create_button('gtk-go-down','0,-1',0,1,2,3)
+			self.btn2up = self.create_button('gtk-go-up'  ,'1,+1',1,2,1,2)
+			self.btn2dn = self.create_button('gtk-go-down','1,-1',1,2,2,3)
+			if ctrl.window_mgr():
+				self.btn3up = self.create_button('gtk-go-up'  ,'2,+1',2,3,1,2)
+				self.btn3dn = self.create_button('gtk-go-down','2,-1',2,3,2,3)
+
+		# Prepare UI
 		self.tbl.show()
 		self.win.show()
-		self.win.iconify()
-
-		# Load commands and config into lists
-		self.lstCmd = []
-		self.lstLbl = []
-		self.lstImg = []
-		rcfile = open('.auxlaunchrc')
-		for line in rcfile:
-			field = line.split(',')
-			self.lstLbl.append(field[0])
-			self.lstCmd.append(field[1])
-			image = gtk.Image() 
-			if field[2].rstrip() == '':
-				image.set_from_stock('gtk-execute', gtk.ICON_SIZE_DIALOG)
-			elif field[2][:4] == 'gtk-':
-				image.set_from_stock(field[2], gtk.ICON_SIZE_DIALOG)
-			else:
-				image.set_from_file(field[2])
-			self.lstImg.append(image)
-
-		# Initialize state
-		self.curApp = 0
-		self.curWin = 0
-		self.setLaunch(0)
-		# switch will be set at focus change
+		self.hide()
 
 		# Hook up to AUX button
 		bus = dbus.SystemBus()
 		bus.add_signal_receiver(self.signal_handler,
-				dbus_interface="org.freesmartphone.Device.Input",
-				signal_name="Event")
+			dbus_interface="org.freesmartphone.Device.Input",
+			signal_name="Event")
 
-	# React to AUX button press
+		gtk.main() # Allow GTK's event loop to run and call us back
+
 	def signal_handler(self, name, action, seconds):
+		'''React to AUX button press'''
 		if name == "AUX" and action == "pressed":
-			self.win.present()  # cause auxlaunch window to appear
+			if ctrl.hide() :
+				if self.hidden:		
+					self.show()
+				else:				
+					self.hide()
+			else: 					
+				self.show()
 
-auxl = AuxLaunch(sys.argv)
-gtk.main()
+
+	def button_pressed(self, widget, data):
+		global ctrl
+		if data == 'go':
+			ctrl.go()
+		else:
+			# Figure out what user meant based on button button position and
+			#   command line options. Asumme defaults 1st.
+			# TODO: clean up constants below
+			right_left = 'left'
+			switching  = 'no_switching'
+			if ctrl.right_hand(): right_left = 'right'
+			if ctrl.window_mgr(): switching  = 'switching'
+			data = data.split(',')
+			column = self.keymap[right_left][switching][int(data[0])]
+			ctrl.adjust(column, int(data[1]))
+
+	def set_go(self, icon, text):
+		'''Update Go button's image and label'''
+		self.btnGo.set_image(icon)
+		self.btnGo.set_label(text)
+		label = self.btnGo.child.child.get_children()[1]
+		label.set_markup('<big><big><big>'+text+'</big></big></big>')
+
+	def delete_event(self, widget, event, data=None):
+		'''Answers qeuestion: should exit event be deleted?'''
+		if ctrl.done():
+			gtk.main_quit()
+			return False
+		else:
+			return True
+
+	def focus_event(self, widget, event, data=None):
+		''' Process event: app window gained or lost focus'''
+		ctrl.refresh()
+
+	def create_button(self, stock_id, data, left,right,top,botton):
+		'''Utility function to create buttons'''
+		button = gtk.Button()
+		image = gtk.Image()
+		image.set_from_stock(stock_id, gtk.ICON_SIZE_DIALOG)
+		button.set_image(image)
+		button.connect("clicked", self.button_pressed, data)
+		self.tbl.attach(button, left, right, top, botton)
+		button.show()
+		return button
+
+	def hide(self):
+		self.win.iconify()
+		self.hidden = True
+
+	def show(self):
+		self.win.maximize()
+		self.win.present()
+		self.hidden = False				
+
+	def stop_ui(self):
+		gtk.main_quit()
+
+class Controller:
+	'''Track status of auxlaunch app, manages model and view'''
+
+	# These constants are passed between the view and the controller.
+	#   They represent the "mode" (what the go button will do). Mode is
+	#   determined by most recently pressed adjust button's position on-screen.
+	APP = 'app'
+	WIN = 'win'
+	GRP = 'grp'
+	ERR = '   '
+
+	def __init__(self):
+		# The application's "state" is the mode of the go button
+		#   plus the current index positions in the lists of groups,
+		#   apps, and windows
+		self.goMode = self.APP
+		self.curGrp = 0
+		self.curApp = 0
+		self.curWin = 0
+
+	def run(self):
+		if self.help_needed():
+			pass
+		else:
+			global model
+			global view
+			model.load_from_rc()
+			if self.dms():
+				model.load_from_dms()
+			view.start_ui()
+
+	# Command line options:
+	def help_needed(self):
+		if '-help' in sys.argv:	
+			print '-dms    = Include items from Debian Menu System.'
+			print '-nowm   = No window manager. (Do not show window switching buttons).'
+			print '-right  = Swap app-launchning and window-switching buttons (right for left).'
+			print '-hide   = Cause AUX button to hide Auxlaunch (when it is displayed).'
+			print '-simple = Use "change" buttons for grp/app/win selecting (instead of up/down buttons).'
+			return True
+		else:
+			return False
+	def window_mgr(self):
+		if '-nowm' in sys.argv:	return False
+		else:						return True
+	def right_hand(self):
+		if '-right' in sys.argv:	return True
+		else:						return False
+	def dms(self):
+		if '-dms' in sys.argv:		return True
+		else:						return False
+	def hide(self):
+		if '-hide' in sys.argv:		return True
+		else:						return False
+	def simple_ui(self):
+		if '-simple' in sys.argv:	return True
+		else:						return False
+
+	def done(self):
+		'''Check if ok to exit application'''
+		return True # For now, always exit - nothing needs to be saved
+
+	def go(self):
+		'''React to "Go" button press'''
+		if self.goMode == self.APP:
+			command = model.get_app(self.curGrp,self.curApp).get_command()
+			if command == '(cancel)':
+				view.hide()
+			elif command == '(quit)':
+				view.stop_ui()
+			else:
+				print 'auxlaunch: launching "'+command+'"' # debug
+				view.hide()
+				os.system(command)
+		elif self.goMode == self.WIN:
+			window_title = model.get_window(self.curWin).get_title()
+			window_ID    = model.get_window(self.curWin).get_win_id()
+			print 'auxlaunch: swtiching "'+window_title+'": '+window_ID  # debug
+			view.hide()
+			os.system('wmctrl -i -a '+window_ID)
+		elif self.goMode == self.GRP:
+			self.curApp = 0
+			app = model.get_app(self.curGrp,self.curApp)
+			view.set_go(app.get_icon(), app.get_name())
+			self.goMode = self.APP
+
+	def adjust(self, new_mode, change):
+		'''React to change-button press, update state and "Go" button'''
+
+		# Adjust state while enforcing bounds checking of list indexes
+		if new_mode == Controller.GRP:
+			self.curGrp = (self.curGrp + change) % model.num_groups()
+			view.set_go(model.group_image(), model.get_group(self.curGrp))
+		elif new_mode == Controller.APP:
+			self.curApp = (self.curApp + change) % model.num_apps_in_group(self.curGrp)
+			app = model.get_app(self.curGrp,self.curApp)
+			view.set_go(app.get_icon(), app.get_name())
+		elif new_mode == Controller.WIN:
+			self.curWin = (self.curWin + change) % model.num_win()
+			window = model.get_window(self.curWin)
+			view.set_go(model.switch_image, window.get_title())
+
+		# Adjust Go button's mode
+		self.goMode = new_mode
+
+	def refresh(self):
+		'''Load new snapshot of other apps' window titles'''
+		if self.window_mgr():
+			model.reload_windows()
+			self.curWin = 0   # TODO: guess window based on history
+			window = model.get_window(self.curWin)
+			view.set_go(model.switch_image, window.get_title())
+
+class ModelManager:
+	'''Provide data - groups, apps, windows, images'''
+	def __init__(self):
+		# Create a group-to-app-list dictionary where keys will
+		#    be group names and items will be lists of "Apps"s
+		self.grpApps = {}
+
+		# Keep list objects that represent current X application windows
+		self.winList = []
+
+		# Store generic "group' and "switch' images - since other images are in model
+		self.switch_image = gtk.Image()
+		self.switch_image.set_from_stock('gtk-refresh', gtk.ICON_SIZE_DIALOG)
+		self.grp_image = gtk.Image()
+		self.grp_image.set_from_stock('gtk-directory', gtk.ICON_SIZE_DIALOG)
+
+	# Images
+	def switch_image(self):
+		return self.switch_image
+	def group_image(self):
+		return self.grp_image
+
+	# Windows
+	def num_win(self):
+		return len(self.winList)
+
+	def get_window(self, number):
+		return self.winList[number]
+
+	def reload_windows(self):
+		'''Build list of other apps' window IDs and titles'''
+		self.winList = []
+		output = os.popen('wmctrl -l','r')
+		while True:
+			line = output.readline()
+			if not line: break
+			field = line.split(None,3)
+			title = field[3].rstrip() 	
+			title = title.replace('<','-')
+			title = title.replace('>','-')
+			if title == 'auxlaunch':
+				continue
+			self.winList.append(WinItem(field[0], title))
+
+	# Groups and apps
+	def num_groups(self):
+		return len(self.grpApps.keys())
+
+	def num_apps_in_group(self, groupNum):
+		group = self.grpApps.keys()[groupNum]
+		return len(self.grpApps[group])
+
+	def get_group(self, number):
+		return self.grpApps.keys()[number]
+
+	def get_app(self, groupNum, appNum):
+		'''Provide desired app item object'''
+		group = self.grpApps.keys()[groupNum]
+		return self.grpApps[group][appNum]
+
+	def load_from_rc(self):
+		'''Read Auxlaunch's config file'''
+		# Create temporary, holding variables		
+		INITGROUP  = '(My Default Group)' 
+		curGroup   = INITGROUP  
+		curApps    = []
+
+		rcfile = open('.auxlaunchrc')
+		for line in rcfile:
+			field = line.split(',')
+			if field[0][0].upper() == '"':	# Menu record
+				if not (curGroup == INITGROUP and len(curApps) == 0):
+					self.grpApps[curGroup] = curApps   # Flush holding vars
+				curGroup = field[0].strip('"').strip("'")
+				curApps = []
+			else:							# Item record
+				image = gtk.Image()
+				if field[2].rstrip() == '':
+					image.set_from_stock('gtk-execute', gtk.ICON_SIZE_DIALOG)
+				elif field[2][:4] == 'gtk-':
+					image.set_from_stock(field[2], gtk.ICON_SIZE_DIALOG)
+				else:
+					image.set_from_file(field[2])
+				app = AppItem(image,field[0],field[1])
+				curApps.append(app)
+		# Flush last holding value		
+		if not (curGroup == INITGROUP and len(curApps) == 0):
+			self.grpApps[curGroup] = curApps   
+
+	def load_from_dms(self):
+		'''Read entries out of Debian Menu System files'''
+		for filename in os.listdir('/usr/share/menu'):
+			file_object = open('/usr/share/menu/'+filename)
+			buf = file_object.read(1000000)
+			buf = buf.decode('string_escape')   # Remove escaped newlines
+			entries = buf.splitlines()
+			for entry in entries:
+				entry = entry.split()           # Remove leading, trailing,
+				entry = ' '.join(entry)         #   and extra inner spaces
+				entry = entry.strip()
+				if entry ==  '':	continue    # Skip empties and non-entries
+				if entry[0] <> '?':	continue
+				entry = entry.partition(':')[2] # Remove prior to ':'
+				if entry == '':		continue
+				quoted = False				    # Chop at unquoted spaces
+				space_at = []
+				for i in range(len(entry)):
+					if entry[i] == '"':
+						quoted = not quoted
+					if entry[i] == ' ' and not quoted:
+						space_at.append(i)
+				fields = []
+				start = 0
+				for end in space_at:
+					fields.append(entry[start:end])
+					start = end+1
+				fields.append(entry[start:])
+
+				# Extract field names and values
+				item = {'needs':'', 'title':'', 'command':'', 'icon':'', 'section':'Default'}
+				for field in fields:
+					if field == '':      continue
+					if not '=' in field: continue
+					pair = field.split('=')			# TODO Why needed to avoid error?
+					item[pair[0]] = pair[1].strip('"')
+
+				# TODO: Don't yet know how to launch cmd line ("text") apps, so skip 'em
+				if not item['needs'].upper() == 'X11': continue
+
+				# Derive label, image, command, and group
+				label = ''
+				if item['title'] <> '':		label = ' ' + item['title']
+				elif item['command'] <> '':	label = ' ' + item['command']
+				else:                      continue
+				command = item['command'] + ' &'  # TODO: Best place to add '&'?
+				image = gtk.Image()
+				if item['icon'] == '': image.set_from_stock('gtk-execute', gtk.ICON_SIZE_DIALOG)
+				else:                  image.set_from_file(item['icon'])
+
+				# Insert app, and possibly group, into dictionary
+				appList = []
+				if self.grpApps.has_key(item['section']):
+				   appList = self.grpApps[item['section']]
+				appList.append(AppItem(image, label, command))
+				self.grpApps[item['section']] = appList
+
+
+class AppItem:
+   '''Store attributes of an application'''
+   def __init__(self, icon, name, command):
+      self.icon = icon
+      self.name = name
+      self.command = command
+
+   def get_icon(self):
+      return self.icon
+
+   def get_name(self):
+      return self.name
+
+   def get_command(self):
+      return self.command
+
+class WinItem:
+   '''Store attributes of a window'''
+   def __init__(self, window_id, title):
+		self.win_id = window_id
+		self.title  = title
+
+   def get_win_id(self):
+      return self.win_id
+
+   def get_title(self):
+      return self.title
+
+# Auxluanch execution starts here
+model = ModelManager()
+ctrl  = Controller()
+view  = ViewManager()
+ctrl.run()
 

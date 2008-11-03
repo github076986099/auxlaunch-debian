@@ -215,6 +215,8 @@ class Controller:
 			command = model.get_app(self.curGrp,self.curApp).get_command()
 			if command == '(cancel)':
 				view.hide()
+			if command == '(reload)':
+				model.load_from_rc()
 			elif command == '(quit)':
 				view.stop_ui()
 			else:

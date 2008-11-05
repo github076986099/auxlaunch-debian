@@ -1,6 +1,26 @@
 #!/usr/bin/env python
 
-# Auxlaunch, October 2008, aliasid
+#  Auxlaunch
+#
+#  Copyright 2008 Robert Campbell
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# Latest changes
+# - Fixed bug where go button hardcoded to 3 columns
+# - Added window title filtering
+# - Added chrysn's '(reload)' feature  
 
 import pygtk
 import gtk
@@ -13,7 +33,7 @@ class ViewManager:
 	'''Manage the user interface'''
 	def __init__(self):
 		# Create map for change buttons. Indicate which modes
-		#   are invoked by which button positions. This supports options
+		#   are invoked by which column of buttons. This supports options
 		#   like righ/left handed, and window-swithcing or not.
 		lns = {0:Controller.GRP,1:Controller.APP,2:Controller.ERR}
 		lsw = {0:Controller.GRP,1:Controller.APP,2:Controller.WIN}
@@ -44,7 +64,7 @@ class ViewManager:
 		self.win.add(self.tbl)
 
 		# Create a "go" button
-		self.btnGo = self.create_button('gtk-dialog-error','go',0,3,0,1)
+		self.btnGo = self.create_button('gtk-dialog-error','go',0,columns+1,0,1)
 		self.btnGo.set_label('initial')
 
 		# Create multiple sets of arrow or "change" buttons
@@ -173,9 +193,7 @@ class Controller:
 		else:
 			global model
 			global view
-			model.load_from_rc()
-			if self.dms():
-				model.load_from_dms()
+			model.load(self.dms())
 			view.start_ui()
 
 	# Command line options:
@@ -217,6 +235,8 @@ class Controller:
 				view.hide()
 			elif command == '(quit)':
 				view.stop_ui()
+			elif command == '(reload)':
+				model.load(self.dms())
 			else:
 				print 'auxlaunch: launching "'+command+'"' # debug
 				view.hide()
@@ -267,8 +287,11 @@ class ModelManager:
 		#    be group names and items will be lists of "Apps"s
 		self.grpApps = {}
 
-		# Keep list objects that represent current X application windows
+		# Keep a list objects that represent current X application windows
 		self.winList = []
+
+		# Keep a list of window title to filter out
+		self.winDiscard = []
 
 		# Store generic "group' and "switch' images - since other images are in model
 		self.switch_image = gtk.Image()
@@ -300,7 +323,7 @@ class ModelManager:
 			title = field[3].rstrip() 	
 			title = title.replace('<','-')
 			title = title.replace('>','-')
-			if title == 'auxlaunch':
+			if title in self.winDiscard:
 				continue
 			self.winList.append(WinItem(field[0], title))
 
@@ -320,6 +343,14 @@ class ModelManager:
 		group = self.grpApps.keys()[groupNum]
 		return self.grpApps[group][appNum]
 
+	def load(self, add_dms_items):
+		'''Clear and load groups, apps, and window filter lists'''
+		self.grpApps = {}
+		self.winDiscard = []
+		model.load_from_rc()
+		if add_dms_items:
+			model.load_from_dms()
+
 	def load_from_rc(self):
 		'''Read Auxlaunch's config file'''
 		# Create temporary, holding variables		
@@ -335,6 +366,8 @@ class ModelManager:
 					self.grpApps[curGroup] = curApps   # Flush holding vars
 				curGroup = field[0].strip('"').strip("'")
 				curApps = []
+			elif field[0][0].upper() == '-':	# Window title filter record
+				self.winDiscard.append(field[0][1:])
 			else:							# Item record
 				image = gtk.Image()
 				if field[2].rstrip() == '':

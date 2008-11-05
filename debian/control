@@ -3,7 +3,6 @@ Section: x11
 Priority: extra
 Maintainer: Christian M. Amsüss <chrysn@fsfe.org>
 Build-Depends: debhelper (>= 7)
-Build-Depends-Indep: python
 Standards-Version: 3.8.0
 Homepage: http://aliasid.googlepages.com/auxlaunch
 
